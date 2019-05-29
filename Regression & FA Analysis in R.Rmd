@@ -1,0 +1,282 @@
+---
+title: "Projec2_test"
+author: "Jay"
+date: "May 22, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r, include=FALSE}
+setwd("C:/Users/jdas/Downloads/Analytics Data/Project 2")
+
+#Importing the libraries 
+library(psych)
+library(GPArotation)
+library(MASS)
+library(psy)
+library(MVN)
+library(car)
+```
+##Questions:
+#1) Check for Multicollinearity
+#2) Run FA
+#3) Name the Factors
+#4) perform MLR with Y and X added
+```{r}
+#Reading the data and descriptive statistics
+
+data <- read.csv("Factor-Hair-Revised.csv", header = TRUE, sep = ",")
+head(data)
+dim(data)
+str(data)
+names(data)
+describe(data)
+```
+```{r}
+#Removing ID variable
+data1 <- subset(data, select = -c(1))
+
+library(DataExplorer)
+plot_missing(data1)
+plot_histogram(data1)
+plot_correlation(data1)
+
+```
+
+```{r}
+#Correlation analysis (Corrplot)
+library(corrplot)
+datamatrix<-cor(data1)
+corrplot(datamatrix, method ="number")
+```
+
+```{r}
+#Pairwise correlation
+library(ppcor)
+pcor(data1, method = "pearson")
+```
+
+```{r}
+#Regression Model
+model0 = lm(Satisfaction~., data1)
+summary(model0)
+
+##VIF
+vif(model0)
+```
+
+```{r}
+#Factor Analysis
+data2 <- data1[,-12] #Taking a subset of independent variables
+datamatrix<-cor(data2)
+KMO(r=datamatrix) #MSA should be greater than 0.5
+```
+
+```{R}
+#We can also do PCA:
+print(cortest.bartlett(datamatrix,nrow(data1)))
+```
+
+```{R}
+# Scree plot
+parallel <- fa.parallel(data2, fm = 'minres', fa = 'fa')
+```
+
+```{r}
+#Eigen value check :
+ev <- eigen(cor(data2))
+ev$values
+part.fa <- ev$values/sum(ev$values)*100
+part.fa
+```
+
+```{r}
+#Plot a Scree plot using base plot:
+Factor = c(1,2,3,4,5,6,7,8,9,10,11)
+Eigen_Values <-ev$values
+Scree <- data.frame(Factor, Eigen_Values)
+plot(Scree, main = "Scree Plot", col= "Blue",ylim=c(0,4))
+lines(Scree,col='Red')
+abline(h = 1, col="Green")
+
+#Plotting Scree plot using ggplot
+library(ggplot2)
+ggplot(data = Scree,mapping = aes(x=Factor,y=Eigen_Values))+
+  geom_point()+
+  geom_line()+
+  scale_y_continuous(name="Eigen Values",limits = c(0,4))+
+  theme(panel.background = element_blank())+
+  theme(plot.background = element_blank())+
+  theme(panel.grid.major.y = element_line(colour = "skyblue"))+
+  ggtitle("Scree Plot")
+```
+
+
+```{r}
+#Using Factonal command:
+nfactors <- 4
+fit <- factanal(data2, nfactors, scores = c("regression"),
+                rotation = "none")
+print(fit)
+
+#Varimax Rotation
+fit1 <- factanal(data2, nfactors, scores = c("regression"),
+                rotation = "varimax")
+print(fit1)
+```
+
+```{r}
+#Factor Analysis
+##If fm=pa, factor analysis using principal axis method:
+fanone <-  fa(r=data2, nfactors = 4, rotate="none",fm="pa")
+print(fanone)
+fa.diagram(fanone)
+fanone$loadings
+
+#Rotated:
+fa1<- fa(r=data2, nfactors = 4, rotate="varimax",fm="pa")
+print(fa1)
+fa1$loadings
+fa.diagram(fa1)
+plot(fa1$values, type="b")
+##Scores for all the 4 factors only the head part:
+head(fa1$scores)
+
+```
+
+```{r}
+#Combining the factors in the data for regression analysis
+regdata <- cbind(data1[12], fa1$scores)
+#Labeling the data
+names(regdata) <- c("Satisfaction", "Purchase", "Marketing","Post_purchase", "Prod_positioning")
+head(regdata)
+```
+
+```{r}
+#Splitting the data 70:30
+##Random number generator, every time I run this coomand I come 
+##up with different random numbers; Model building exerceise: 
+set.seed(100)
+indices= sample(1:nrow(regdata), 0.7*nrow(regdata))
+train=regdata[indices,]
+test = regdata[-indices,]
+```
+
+```{r}
+#Regression Model using train data
+model1 = lm(Satisfaction~., train)
+summary(model1)
+```
+
+```{r}
+vif(model1)
+```
+
+```{r}
+#Model Performance metrics:
+library(Metrics)
+```
+
+```{r}
+##Model 1:
+pred_test1 <- predict(model1, newdata = test, type = "response")
+pred_test1
+```
+
+```{r}
+#Find MSE and MAPE scores:
+#MSE/ MAPE of Model1
+test$Satisfaction_Predicted <- pred_test1
+
+head(test[c(1,6)], 10)
+#cor(test$Satisfaction, test$Satisfaction_Predicted)^2
+test_r2 <- cor(test$Satisfaction, test$Satisfaction_Predicted) ^2
+
+mse_test1 <- mse(test$Satisfaction, pred_test1)
+rmse_test1 <- sqrt(mse(test$Satisfaction, pred_test1))
+mape_test1 <- mape(test$Satisfaction, pred_test1)
+```
+
+```{r}
+model1_metrics <- cbind(mse_test1,rmse_test1,mape_test1,test_r2)
+print(model1_metrics, 3)
+```
+
+```{r}
+##Regression model without post_purchase:
+model2 <- lm(Satisfaction ~ Purchase+ Marketing+ 
+                Prod_positioning, data= train)
+summary(model2)
+```
+
+```{r}
+##Model 2:
+pred_test2 <- predict(model2, newdata = test, type = "response")
+pred_test2
+```
+
+```{r}
+test$Satisfaction_Predicted2 <- pred_test2
+head(test[c(1,7)], 10)
+```
+
+```{r}
+test_r22 <- cor(test$Satisfaction, test$Satisfaction_Predicted2) ^2
+mse_test2 <- mse(test$Satisfaction, pred_test2)
+rmse_test2 <- sqrt(mse(test$Satisfaction, pred_test2))
+mape_test2 <- mape(test$Satisfaction, pred_test2)
+
+model2_metrics <- cbind(mse_test2,rmse_test2,mape_test2,test_r22)
+model2_metrics
+##Always use mape for the model selection
+##When there is 2 models which one to choose is decided upon this 
+###Criteria:
+```
+
+```{r}
+Overall <- rbind(model1_metrics,model2_metrics)
+row.names(Overall) <- c("Test1", "Test2")
+colnames(Overall) <- c("MSE", "RMSE", "MAPE", "R-squared")
+print(Overall,3)
+```
+
+```{r}
+##Model with Interaction:
+names(regdata)
+
+model3 <- lm(lm(Satisfaction ~ Purchase+ Marketing+ Post_purchase+
+                 Prod_positioning+ Purchase*Post_purchase+
+                  Marketing*Prod_positioning+ Purchase* Marketing+
+                  Purchase* Prod_positioning*Marketing, train ))
+summary(model3)
+```
+
+```{r}
+##Predict with Interactions:
+pred_int_train = predict(model3, data = train, type = "response")
+pred_int_test = predict(model3, newdata = test, type = "response")
+
+mse_train_int <- mse(train$Satisfaction, pred_int_train)
+mse_test_int <- mse(test$Satisfaction, pred_int_test)
+
+rmse_train_int <- sqrt(mse(train$Satisfaction, pred_int_train))
+rmse_test_int <- sqrt(mse(test$Satisfaction, pred_int_test))
+
+mape_train_int <- mape(train$Satisfaction, pred_int_train)
+mape_test_int <- mape(test$Satisfaction, pred_int_test)
+
+r2_train <- cor(train$Satisfaction, pred_int_train) ^2
+r2_test <- cor(test$Satisfaction, pred_int_test) ^2
+
+model3_metrics_train <- cbind(mse_train_int,rmse_train_int,mape_train_int,r2_train)
+model3_metrics_test <- cbind(mse_test_int,rmse_test_int,mape_test_int,r2_test)
+
+interact_train_test <- rbind(model3_metrics_train,model3_metrics_test)
+
+row.names(interact_train_test) <- c("Train","Test")
+colnames(interact_train_test) <- c("MSE","RMSE","MAPE","R-squared")
+
+print(interact_train_test,digits = 3)
+```
+#### Including Interaction we are able to make a better prediction.Even though the Interaction didnot give an significant increase,compared to the individual variables, including interactions we are able to make much more closer predictions.In some cases when I include interaction I am able to increase the model performance measures.
